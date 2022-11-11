@@ -232,10 +232,10 @@ void eval(char *cmdline) {
                 // background job
                 addjob(jobs, pid, BG, cmdline);
 
-                sigprocmask(SIG_SETMASK, &sig_old, NULL);
-
                 // print info
                 printf("[%d] (%d) %s", pid2jid(jobs, pid), pid, cmdline);
+
+                sigprocmask(SIG_SETMASK, &sig_old, NULL);
             } else {
                 // foreground job
                 addjob(jobs, pid, FG, cmdline);
@@ -319,12 +319,17 @@ int builtin_cmd(char **argv) {
  * do_bgfg - Execute the builtin bg and fg commands
  */
 void do_bgfg(char **argv) {
+    sigset_t mask, old;
+    sigfillset(&mask);
+
     if (strcmp(argv[0], buildin_cmd[0]) == 0) {
         // quit
         exit(0);
     } else if (strcmp(argv[0], buildin_cmd[3]) == 0) {
         // jobs
+        sigprocmask(SIG_BLOCK, &mask, &old);
         listjobs(jobs);
+        sigprocmask(SIG_BLOCK, &old, NULL);
     } else {
         printf("do build in cmd\n");
     }
@@ -334,8 +339,16 @@ void do_bgfg(char **argv) {
  * waitfg - Block until process pid is no longer the foreground process
  */
 void waitfg(pid_t pid) {
-    // todo: 优化逻辑
-    while (fgpid(jobs) == pid) {
+    sigset_t mask, old;
+    sigfillset(&mask);
+
+    while (1) {
+        sigprocmask(SIG_BLOCK, &mask, &old);
+        if (fgpid(jobs) != pid) {
+            break;
+        }
+        sigprocmask(SIG_BLOCK, &old, NULL);
+
         sleep(1);
     }
 }
