@@ -349,7 +349,7 @@ void waitfg(pid_t pid) {
         }
         sigprocmask(SIG_BLOCK, &old, NULL);
 
-        sleep(1);
+        sleep(1000000);
     }
 }
 
