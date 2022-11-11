@@ -51,7 +51,7 @@ struct job_t {             /* The job struct */
     int state;             /* UNDEF, BG, FG, or ST */
     char cmdline[MAXLINE]; /* command line */
 };
-struct job_t jobs[MAXJOBS]; /* The job list */
+volatile struct job_t jobs[MAXJOBS]; /* The job list */
 /* End global variables */
 
 /* Function prototypes */
@@ -181,9 +181,21 @@ void eval(char *cmdline) {
         do_bgfg(argv);
     } else {
         // exec new program in child process
+
+        // block SIGCHLD signal
+        sigset_t sigchld, sig_old;
+        sigemptyset(&sigchld);
+        sigaddset(&sigchld, SIGCHLD);
+        sigaddset(&sigchld, SIGINT);
+        sigaddset(&sigchld, SIGTSTP);
+        sigprocmask(SIG_BLOCK, &sigchld, &sig_old);
+
         int pid = fork();
         if (pid == 0) {
             // child process
+
+            // unblock signal
+            sigprocmask(SIG_SETMASK, &sig_old, NULL);
 
             // set child process group to new group
             setpgid(0, 0);
@@ -199,11 +211,16 @@ void eval(char *cmdline) {
                 // background job
                 addjob(pid, BG, cmdline);
 
+                sigprocmask(SIG_SETMASK, &sig_old, NULL);
+
                 // print info
                 printf("[%d] (%d) %s", pid2jid(pid), pid, cmdline);
             } else {
                 // foreground job
                 addjob(pid, FG, cmdline);
+
+                sigprocmask(SIG_SETMASK, &sig_old, NULL);
+
                 waitfg(pid);
             }
         }
@@ -313,7 +330,12 @@ void waitfg(pid_t pid) {
  *     currently running children to terminate.
  */
 void sigchld_handler(int sig) {
-    // todo: 排除对jobs的竞争
+    int old_errno = errno;
+
+    sigset_t mask, old;
+    sigemptyset(&mask);
+    sigprocmask(SIG_BLOCK, &mask, &old);
+
     for (int i = 0; i < MAXJOBS; ++i) {
         int status_p;
         int pid = waitpid(jobs[i].pid, &status_p, WNOHANG | WUNTRACED);
@@ -352,6 +374,9 @@ void sigchld_handler(int sig) {
             }
         }
     }
+
+    sigprocmask(SIG_SETMASK, &old, NULL);
+    errno = old_errno;
 }
 
 /*
@@ -360,12 +385,21 @@ void sigchld_handler(int sig) {
  *    to the foreground job.
  */
 void sigint_handler(int sig) {
+    int old_errno = errno;
+
+    sigset_t mask, old;
+    sigfillset(&mask);
+    sigprocmask(SIG_BLOCK, &mask, &old);
+
     for (int i = 0; i < MAXJOBS; ++i) {
         if (jobs[i].state == FG) {
             kill(-jobs[i].pid, SIGINT);
             break;
         }
     }
+
+    sigprocmask(SIG_SETMASK, &old, NULL);
+    errno = old_errno;
 }
 
 /*
@@ -374,12 +408,21 @@ void sigint_handler(int sig) {
  *     foreground job by sending it a SIGTSTP.
  */
 void sigtstp_handler(int sig) {
+    int old_errno = errno;
+
+    sigset_t mask, old;
+    sigfillset(&mask);
+    sigprocmask(SIG_BLOCK, &mask, &old);
+
     for (int i = 0; i < MAXJOBS; ++i) {
         if (jobs[i].state == FG) {
             kill(-jobs[i].pid, SIGTSTP);
             break;
         }
     }
+
+    sigprocmask(SIG_SETMASK, &old, NULL);
+    errno = old_errno;
 }
 
 /*********************
