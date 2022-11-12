@@ -324,6 +324,12 @@ void do_bgfg(char **argv) {
 
     if (strcmp(argv[0], buildin_cmd[0]) == 0) {
         // quit
+        sigprocmask(SIG_BLOCK, &mask, &old);
+        for (int i = 0; i < MAXJOBS; ++i) {
+            if (jobs[i].pid > 0) {
+                kill(-jobs[i].pid, SIGKILL);
+            }
+        }
         exit(0);
     } else if (strcmp(argv[0], buildin_cmd[3]) == 0) {
         // jobs
