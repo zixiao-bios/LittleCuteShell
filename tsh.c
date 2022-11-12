@@ -332,6 +332,11 @@ void do_bgfg(char **argv) {
         sigprocmask(SIG_SETMASK, &old, NULL);
     } else {
         // fg and bg
+        if (!argv[1]) {
+            printf("%s command requires PID or %%jobid argument\n", argv[0]);
+            return;
+        }
+
         sigprocmask(SIG_BLOCK, &mask, &old);
 
         volatile struct job_t *job;
