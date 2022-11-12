@@ -329,9 +329,47 @@ void do_bgfg(char **argv) {
         // jobs
         sigprocmask(SIG_BLOCK, &mask, &old);
         listjobs(jobs);
-        sigprocmask(SIG_BLOCK, &old, NULL);
+        sigprocmask(SIG_SETMASK, &old, NULL);
     } else {
-        printf("do build in cmd\n");
+        // fg and bg
+        sigprocmask(SIG_BLOCK, &mask, &old);
+
+        volatile struct job_t *job;
+
+        if (argv[1][0] == '%') {
+            job = getjobjid(jobs, atoi(argv[1] + 1));
+
+            if (!job) {
+                printf("%s：No such job\n", argv[1]);
+                sigprocmask(SIG_SETMASK, &old, NULL);
+                return;
+            }
+        } else {
+            job = getjobpid(jobs, atoi(argv[1]));
+
+            if (!job) {
+                printf("(%s): No such process\n", argv[1]);
+                sigprocmask(SIG_SETMASK, &old, NULL);
+                return;
+            }
+        }
+
+        if (strcmp(argv[0], buildin_cmd[1]) == 0) {
+            // fg
+            job->state = FG;
+            kill(-job->pid, SIGCONT);
+
+            sigprocmask(SIG_SETMASK, &old, NULL);
+
+            waitfg(job->pid);
+        } else {
+            // bg
+            job->state = BG;
+            kill(-job->pid, SIGCONT);
+            printf("[%d] (%d) %s", pid2jid(jobs, job->pid), job->pid, job->cmdline);
+
+            sigprocmask(SIG_SETMASK, &old, NULL);
+        }
     }
 }
 
@@ -345,9 +383,10 @@ void waitfg(pid_t pid) {
     while (1) {
         sigprocmask(SIG_BLOCK, &mask, &old);
         if (fgpid(jobs) != pid) {
+            sigprocmask(SIG_SETMASK, &old, NULL);
             break;
         }
-        sigprocmask(SIG_BLOCK, &old, NULL);
+        sigprocmask(SIG_SETMASK, &old, NULL);
 
         sleep(1000000);
     }
@@ -368,7 +407,7 @@ void sigchld_handler(int sig) {
     int old_errno = errno;
 
     sigset_t mask, old;
-    sigemptyset(&mask);
+    sigfillset(&mask);
     sigprocmask(SIG_BLOCK, &mask, &old);
 
     for (int i = 0; i < MAXJOBS; ++i) {
